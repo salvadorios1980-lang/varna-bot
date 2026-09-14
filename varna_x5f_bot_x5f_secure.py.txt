@@ -1,0 +1,75 @@
+import telebot
+import os
+from datetime import datetime
+
+# Взима токена от Render, не от кода - така е защитен
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+if not BOT_TOKEN:
+    raise Exception("Сложи BOT_TOKEN в Environment Variables в Render!")
+
+CHANNEL_ID = os.getenv("CHANNEL_ID", "@VarnaObyavi247")
+ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))  # твоя ID от @userinfobot
+
+bot = telebot.TeleBot(BOT_TOKEN)
+
+posted_ads = {}
+
+WELCOME = """
+🏖️ VarnaObyaviBot - Автоматични обяви Варна 24/7
+
+/promo - пусни обява веднага
+/vip - направи я VIP за 24ч най-отгоре
+/help - помощ
+"""
+
+@bot.message_handler(commands=['start', 'help'])
+def start(m):
+    bot.send_message(m.chat.id, WELCOME)
+
+@bot.message_handler(commands=['promo', 'obyava'])
+def promo_start(m):
+    bot.send_message(m.chat.id, "📝 Изпрати обявата си в ЕДНО съобщение с телефон и цена:")
+    bot.register_next_step_handler(m, handle_ad)
+
+def is_spam(text):
+    bad = ["http://", "https://", "t.me/", "xxx", "porno"]
+    return any(b in text.lower() for b in bad)
+
+def handle_ad(m):
+    text = m.text or ""
+    if len(text) < 20:
+        bot.send_message(m.chat.id, "❌ Твърде кратка. Добави телефон и цена.")
+        return
+    if is_spam(text):
+        bot.send_message(m.chat.id, "❌ Без линкове към други канали.")
+        return
+
+    ad = f"""📢 НОВА ОБЯВА - ВАРНА
+
+{text}
+
+---
+👤 @{m.from_user.username or 'потребител'} | 🕐 {datetime.now().strftime('%d.%m %H:%M')}
+#Varna #Obyavi
+💬 Пусни и ти: @Varna_Obyavi_Bot"""
+
+    try:
+        bot.send_message(CHANNEL_ID, ad)
+        bot.send_message(m.chat.id, f"✅ Пусната в {CHANNEL_ID}! Искаш ли да е най-отгоре 24ч? Напиши /vip")
+        posted_ads[m.from_user.id] = posted_ads.get(m.from_user.id, 0) + 1
+        # Доклад за пари при админ
+        if ADMIN_ID:
+            bot.send_message(ADMIN_ID, f"💰 Нова обява от @{m.from_user.username}: {text[:60]}...")
+    except Exception as e:
+        bot.send_message(m.chat.id, f"❌ Грешка: Направи бота админ в {CHANNEL_ID}. Грешка: {e}")
+
+@bot.message_handler(commands=['vip'])
+def vip(m):
+    markup = telebot.types.InlineKeyboardMarkup()
+    markup.add(telebot.types.InlineKeyboardButton("💳 Плати 15лв - 24ч най-отгоре", url="https://revolut.me/ТВОЯ_ЛИНК"))
+    bot.send_message(m.chat.id, "💎 VIP - 15лв за 24ч закачена най-отгоре. Плати и прати скрийншот тук.", reply_markup=markup)
+    if ADMIN_ID:
+        bot.send_message(ADMIN_ID, f"🔥 Някой иска VIP: @{m.from_user.username} - пиши му!")
+
+print("Varna bot started - чака обяви...")
+bot.infinity_polling()
